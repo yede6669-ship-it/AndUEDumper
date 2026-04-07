@@ -247,6 +247,14 @@ ElfScanner IGameProfile::GetUnrealELF() const
         }
     }
 
+    // find from /maps
+    for (const auto &lib : cUELibNames)
+    {
+        ue_elf = kMgr.elfScanner.findElf(lib);
+        if (ue_elf.isValid())
+            return ue_elf;
+    }
+
     return ue_elf;
 }
 

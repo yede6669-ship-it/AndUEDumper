@@ -78,7 +78,7 @@ std::vector<IGameProfile *> UE_Games = {
     new PUBGProfile(),
 };
 
-#define kPROGRAM_VER "4.3.1"
+#define kPROGRAM_VER "4.3.2"
 
 // increase if needed
 #define WAIT_TIME_SEC 20
@@ -111,10 +111,7 @@ void dump_thread(bool bDumpLib)
     pid_t gamePID = getpid();
 
     // dumping at external app data folder to avoid external storage permission
-    std::string sOutDirectory = KittyUtils::getExternalStorage();
-    sOutDirectory += "/Android/data/";
-    sOutDirectory += sGamePackage;
-    sOutDirectory += "/files";
+    std::string sOutDirectory = KittyUtils::Android::getAppExternalFilesDir(sGamePackage);
 
     LOGI("Game: %s", sGamePackage.c_str());
     LOGI("Process ID: %d", gamePID);
