@@ -1,4 +1,4 @@
-name: Build_AndUEDumper_Final_Attempt
+name: Build_AndUEDumper_Final_Fix
 
 on:
   workflow_dispatch:
@@ -10,23 +10,30 @@ jobs:
       - name: Checkout Code
         uses: actions/checkout@v4
 
-      - name: Build
+      - name: Build with Direct Includes
         run: |
           # 1. 定位到 Android.mk 所在的目录
           MK_PATH=$(find . -name "Android.mk" -print -quit)
           BUILD_DIR=$(dirname "$MK_PATH")
           cd "$BUILD_DIR"
+          
+          # 打印一下路径，确认 KittyMemory 文件夹就在这里
+          echo "当前工作目录: $(pwd)"
+          ls -R KittyMemory || echo "警告：KittyMemory 文件夹不存在！"
 
-          # 2. 这里的 NDK 路径是 GitHub 预装的最新版
+          # 2. 核心修复：通过 CFLAGS 强制注入头文件搜索路径
+          # -I$(pwd)/KittyMemory 会告诉编译器去这里找 .hpp 文件
           $ANDROID_NDK_LATEST_HOME/ndk-build \
             APP_ABI=arm64-v8a \
             APP_PLATFORM=android-26 \
             NDK_PROJECT_PATH=. \
             APP_BUILD_SCRIPT=Android.mk \
+            LOCAL_CFLAGS="-I$(pwd)/KittyMemory -I$(pwd)/src" \
+            LOCAL_CPPFLAGS="-I$(pwd)/KittyMemory -I$(pwd)/src" \
             -j$(nproc)
 
-      - name: Upload
+      - name: Upload Result
         uses: actions/upload-artifact@v4
         with:
-          name: Dumper_Output
+          name: AndUEDumper_ARM64
           path: "**/libs/arm64-v8a/*"
