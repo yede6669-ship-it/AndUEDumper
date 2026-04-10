@@ -1,11 +1,14 @@
 name: Build AndUEDumper
 
 on:
-  workflow_dispatch: # 手动触发
+  workflow_dispatch:
 
 jobs:
   build:
     runs-on: ubuntu-latest
+    env:
+      # 解决图片中的 Node.js 20 弃用警告，强制使用 Node.js 24
+      FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
     steps:
       - name: Checkout Code
@@ -17,18 +20,18 @@ jobs:
           java-version: '17'
           distribution: 'temurin'
 
-      # 使用官方/主流 Action 安装 NDK
-      - name: Setup Android SDK & NDK
+      # 修复：使用正确的方式安装 SDK 组件
+      - name: Setup Android SDK
         uses: android-actions/setup-android@v3
         with:
-          # 针对 UE4.27，建议使用 r21e 或 r25c 保证兼容性
-          ndk-version: "25.2.9519653" 
+          packages: 'ndk;25.2.9519653' # 通过 packages 参数安装特定版本的 NDK
 
       - name: Build with ndk-build
         run: |
-          # 确保进入包含 Android.mk 的目录
-          cd jni 
-          $ANDROID_NDK_HOME/ndk-build APP_ABI=arm64-v8a NDK_PROJECT_PATH=. APP_BUILD_SCRIPT=Android.mk
+          # 定义 NDK 路径（setup-android 会将 SDK 放在 $ANDROID_SDK_ROOT）
+          export NDK_PATH=$ANDROID_SDK_ROOT/ndk/25.2.9519653
+          cd jni
+          $NDK_PATH/ndk-build APP_ABI=arm64-v8a NDK_PROJECT_PATH=. APP_BUILD_SCRIPT=Android.mk
 
       - name: Upload Result
         uses: actions/upload-artifact@v4
