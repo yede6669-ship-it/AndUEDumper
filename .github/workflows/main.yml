@@ -1,4 +1,4 @@
-name: Build AndUEDumper
+name: Build AndUEDumper 2026_Stable
 
 on:
   workflow_dispatch:
@@ -7,12 +7,14 @@ jobs:
   build:
     runs-on: ubuntu-latest
     env:
-      # 解决图片中的 Node.js 20 弃用警告，强制使用 Node.js 24
+      # 强制启用 Node.js 24 运行环境，跳过弃用检查
       FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+      # 避免 Android SDK 交互式许可确认阻塞进程
+      ANDROID_SDK_TOOLS_REVISIONS: "34.0.0"
 
     steps:
       - name: Checkout Code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v4 # v4 已原生支持 Node.js 20+
 
       - name: Set up JDK 17
         uses: actions/setup-java@v4
@@ -20,21 +22,30 @@ jobs:
           java-version: '17'
           distribution: 'temurin'
 
-      # 修复：使用正确的方式安装 SDK 组件
-      - name: Setup Android SDK
-        uses: android-actions/setup-android@v3
-        with:
-          packages: 'ndk;25.2.9519653' # 通过 packages 参数安装特定版本的 NDK
-
-      - name: Build with ndk-build
+      # 使用官方提供的 cmdline-tools 安装方式，避开不稳定的第三方 ndk-action
+      - name: Install Android NDK r25c
         run: |
-          # 定义 NDK 路径（setup-android 会将 SDK 放在 $ANDROID_SDK_ROOT）
-          export NDK_PATH=$ANDROID_SDK_ROOT/ndk/25.2.9519653
-          cd jni
-          $NDK_PATH/ndk-build APP_ABI=arm64-v8a NDK_PROJECT_PATH=. APP_BUILD_SCRIPT=Android.mk
+          echo "y" | $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager --install "ndk;25.2.9519653"
+          echo "NDK_HOME=$ANDROID_HOME/ndk/25.2.9519653" >> $GITHUB_ENV
 
-      - name: Upload Result
+      - name: Execute NDK Build
+        run: |
+          # 检查 jni 目录是否存在
+          if [ ! -d "jni" ]; then
+            echo "Error: Directory 'jni' not found in repository root."
+            exit 1
+          fi
+          
+          # 执行编译
+          cd jni
+          $NDK_HOME/ndk-build \
+            APP_ABI=arm64-v8a \
+            NDK_PROJECT_PATH=. \
+            APP_BUILD_SCRIPT=Android.mk \
+            NDK_APPLICATION_MK=Application.mk || exit 1
+
+      - name: Archive and Upload Binary
         uses: actions/upload-artifact@v4
         with:
-          name: AndUEDumper-ARM64
+          name: UE427-Dumper-ARM64
           path: jni/libs/arm64-v8a/
