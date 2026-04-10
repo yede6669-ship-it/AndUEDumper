@@ -1,26 +1,60 @@
+name: Build_AndUEDumper_UE427_Final
+
+on:
+  workflow_dispatch: # 手动触发
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    env:
+      # 适配 2026 年 GitHub Node 环境要求
+      FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
+    steps:
       - name: Checkout Code
         uses: actions/checkout@v4
         with:
-          # 关键点：递归拉取所有依赖的子模块 (submodules)
+          # 核心修复：递归下载 KittyMemory 等子模块
           submodules: recursive
+          fetch-depth: 0
 
-      - name: Build ARM64 Binary
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: 'temurin'
+
+      - name: Pre-Build Fixes
         run: |
-          # 1. 递归寻找 Android.mk
+          # 1. 查找 Android.mk 所在目录
           MK_PATH=$(find . -name "Android.mk" -print -quit)
           BUILD_DIR=$(dirname "$MK_PATH")
-          cd "$BUILD_DIR"
-
-          # 2. 检查 KittyMemory 是否存在，若不存在则尝试手动修复常见路径
-          # 有的游戏项目将其放在 ../KittyMemory 或内部的 KittyMemory 文件夹
-          if [ ! -f "src/UE/KittyMemoryMgr.hpp" ] && [ ! -d "KittyMemory" ]; then
-            echo "警告：未检测到 KittyMemory 依赖，尝试从 GitHub 紧急拉取..."
-            git clone https://github.com/mircodezorzi/KittyMemory.git
+          echo "BUILD_DIR=$BUILD_DIR" >> $GITHUB_ENV
+          
+          # 2. 修复 KittyMemory 缺失问题
+          # 如果子模块没下成功，手动从镜像源拉取
+          if [ ! -d "$BUILD_DIR/KittyMemory" ] && [ ! -d "KittyMemory" ]; then
+            echo "子模块拉取失败，尝试手动克隆 KittyMemory..."
+            git clone https://github.com/mircodezorzi/KittyMemory.git "$BUILD_DIR/KittyMemory"
           fi
 
-          # 3. 执行编译
+      - name: Execute NDK Build
+        run: |
+          cd ${{ env.BUILD_DIR }}
+          
+          # 使用系统自带 NDK 执行编译
+          # 强制 APP_PLATFORM=android-26 以支持 UE4.27 所需的 C++ 库
           $ANDROID_NDK_LATEST_HOME/ndk-build \
             APP_ABI=arm64-v8a \
+            APP_PLATFORM=android-26 \
             NDK_PROJECT_PATH=. \
             APP_BUILD_SCRIPT=Android.mk \
             -j$(nproc)
+
+      - name: Upload ARM64 Binary
+        uses: actions/upload-artifact@v4
+        with:
+          name: AndUEDumper_UE427_ARM64
+          # 使用通配符匹配编译出的二进制产物
+          path: "**/libs/arm64-v8a/*"
+          if-no-files-found: error
