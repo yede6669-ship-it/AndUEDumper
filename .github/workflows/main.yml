@@ -1,4 +1,4 @@
-name: Build_AndUEDumper_427_Fix_Final
+name: Build_AndUEDumper_Final_Attempt
 
 on:
   workflow_dispatch:
@@ -6,45 +6,18 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
-    env:
-      FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
-
     steps:
       - name: Checkout Code
         uses: actions/checkout@v4
 
-      - name: Create Missing Dependencies
+      - name: Build
         run: |
-          # 1. 寻找 Android.mk 所在目录
-          MK_PATH=$(find . -name "Android.mk" -print -quit)
-          BUILD_DIR=$(dirname "$MK_PATH")
-          echo "构建目录: $BUILD_DIR"
-          
-          # 2. 手动构建 KittyMemory 结构 (针对编译报错的那几个文件)
-          # 注意：这里我们通过下载原始源码的简单 Raw 链接，通常这个不经过 API，不容易被封
-          mkdir -p "$BUILD_DIR/KittyMemory"
-          
-          # 3. 直接下载核心头文件 (Raw 链接通常更稳)
-          BASE_URL="https://raw.githubusercontent.com/mircodezorzi/KittyMemory/master/KittyMemory"
-          curl -sL "$BASE_URL/KittyMemoryMgr.hpp" -o "$BUILD_DIR/KittyMemory/KittyMemoryMgr.hpp"
-          curl -sL "$BASE_URL/KittyMemory.hpp" -o "$BUILD_DIR/KittyMemory/KittyMemory.hpp"
-          curl -sL "$BASE_URL/KittyMemory.cpp" -o "$BUILD_DIR/KittyMemory/KittyMemory.cpp"
-          curl -sL "$BASE_URL/KittyScanner.hpp" -o "$BUILD_DIR/KittyScanner.hpp"
-          curl -sL "$BASE_URL/KittyScanner.cpp" -o "$BUILD_DIR/KittyScanner.cpp"
-          
-          # 检查下载是否成功
-          if [ ! -f "$BUILD_DIR/KittyMemory/KittyMemoryMgr.hpp" ]; then
-            echo "错误：无法获取依赖文件。请检查仓库设置中的 Actions 访问权限。"
-            exit 1
-          fi
-
-      - name: Execute NDK Build
-        run: |
+          # 1. 定位到 Android.mk 所在的目录
           MK_PATH=$(find . -name "Android.mk" -print -quit)
           BUILD_DIR=$(dirname "$MK_PATH")
           cd "$BUILD_DIR"
 
-          # 强制指定 NDK 编译参数
+          # 2. 这里的 NDK 路径是 GitHub 预装的最新版
           $ANDROID_NDK_LATEST_HOME/ndk-build \
             APP_ABI=arm64-v8a \
             APP_PLATFORM=android-26 \
@@ -52,8 +25,8 @@ jobs:
             APP_BUILD_SCRIPT=Android.mk \
             -j$(nproc)
 
-      - name: Upload Result
+      - name: Upload
         uses: actions/upload-artifact@v4
         with:
-          name: AndUEDumper_UE427
+          name: Dumper_Output
           path: "**/libs/arm64-v8a/*"
