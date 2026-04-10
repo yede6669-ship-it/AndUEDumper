@@ -1,4 +1,4 @@
-name: Build_AndUEDumper_Final_Fix
+name: Build_AndUEDumper_Absolute_Fix
 
 on:
   workflow_dispatch:
@@ -10,30 +10,41 @@ jobs:
       - name: Checkout Code
         uses: actions/checkout@v4
 
-      - name: Build with Direct Includes
+      - name: Auto-Fix and Build
         run: |
-          # 1. 定位到 Android.mk 所在的目录
+          # 1. 自动定位 Android.mk 的最深处位置
           MK_PATH=$(find . -name "Android.mk" -print -quit)
           BUILD_DIR=$(dirname "$MK_PATH")
+          echo "检测到核心目录: $BUILD_DIR"
           cd "$BUILD_DIR"
-          
-          # 打印一下路径，确认 KittyMemory 文件夹就在这里
-          echo "当前工作目录: $(pwd)"
-          ls -R KittyMemory || echo "警告：KittyMemory 文件夹不存在！"
 
-          # 2. 核心修复：通过 CFLAGS 强制注入头文件搜索路径
-          # -I$(pwd)/KittyMemory 会告诉编译器去这里找 .hpp 文件
+          # 2. 强力修复 KittyMemory 路径
+          # 不管它在哪，我们直接从仓库根目录找这个库并强行拷贝到当前编译目录
+          KITTY_SRC=$(find /home/runner/work -name "KittyMemoryMgr.hpp" -print -quit)
+          if [ -n "$KITTY_SRC" ]; then
+            KITTY_DIR=$(dirname "$KITTY_SRC")
+            mkdir -p ./KittyMemory
+            cp -r "$KITTY_DIR"/* ./KittyMemory/
+            echo "已强行补齐 KittyMemory 依赖"
+          else
+            echo "错误：仓库中完全没找到 KittyMemory 源码，请确认你已经手动上传了它！"
+          fi
+
+          # 3. 执行编译
+          # 关键参数：
+          # LOCAL_CPPFLAGS="-fexceptions" -> 允许代码使用 throw/try (修复 argsparse 报错)
+          # -I$(pwd)/KittyMemory -> 强制包含头文件路径
           $ANDROID_NDK_LATEST_HOME/ndk-build \
             APP_ABI=arm64-v8a \
             APP_PLATFORM=android-26 \
             NDK_PROJECT_PATH=. \
             APP_BUILD_SCRIPT=Android.mk \
+            LOCAL_CPPFLAGS="-fexceptions -I$(pwd)/KittyMemory -I$(pwd)/src" \
             LOCAL_CFLAGS="-I$(pwd)/KittyMemory -I$(pwd)/src" \
-            LOCAL_CPPFLAGS="-I$(pwd)/KittyMemory -I$(pwd)/src" \
             -j$(nproc)
 
-      - name: Upload Result
+      - name: Upload Output
         uses: actions/upload-artifact@v4
         with:
-          name: AndUEDumper_ARM64
+          name: AndUEDumper_Working_Binary
           path: "**/libs/arm64-v8a/*"
