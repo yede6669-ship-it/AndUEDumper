@@ -12,42 +12,53 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      # 1. 递归检出代码及子模块
+      # 1. 递归检出代码及所有子模块（非常重要，漏了底层库会报错）
       - name: Checkout repository with submodules
         uses: actions/checkout@v4
         with:
           submodules: recursive
 
-      # 2. 通过 SDK 管理器自动下载 NDK
+      # 2. 通过 SDK 管理器自动下载 NDK r25c
       - name: Install Android NDK via SDKManager
         run: |
           echo "y" | $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager --install "ndk;25.2.9519653"
 
-      # 3. 赋予脚本执行权限并调用 build.sh 编译
-      # 同样把 NDK 路径映射给项目需要用的 NDK_HOME 变量
-      - name: Compile with build.sh
+      # 3. 直接进入主程序目录进行编译（不走 find 盲搜，100% 精准）
+      - name: Compile Main AndUEDumper
         run: |
-          # 寻找 build.sh 所在的目录并进入
-          SCRIPT_DIR=$(find . -name "build.sh" -exec dirname {} \;)
-          if [ -n "$SCRIPT_DIR" ]; then
-              echo "[+] 找到 build.sh 位于: $SCRIPT_DIR"
-              cd "$SCRIPT_DIR"
-          else
-              echo "[-] 错误：整个仓库中都没有找到 build.sh！"
-              exit 1
+          # 检查当前最外层目录结构
+          ls -la
+          
+          # 直接尝试进入 AndUEDumper 主目录
+          # （注：如果你的仓库根目录直接就是源码，没有 AndUEDumper 这一层文件夹，它会自动留在根目录）
+          if [ -d "AndUEDumper" ]; then
+              cd AndUEDumper
           fi
           
-          # 给脚本加可执行权限并运行
-          chmod +x build.sh
-          ./build.sh
+          echo "[+] 当前编译工作目录: $(pwd)"
+          
+          if [ -f "build.sh" ]; then
+              echo "[+] 成功找到主构建脚本，开始编译..."
+              chmod +x build.sh
+              ./build.sh
+          elif [ -f "AndUEDumper/build.sh" ]; then
+              echo "[+] 在子目录中找到 build.sh，开始编译..."
+              cd AndUEDumper
+              chmod +x build.sh
+              ./build.sh
+          else
+              echo "[-] 错误：在此路径下未找到主程序的 build.sh 脚本！"
+              ls -R
+              exit 1
+          fi
         env:
           NDK_HOME: ${{ env.ANDROID_HOME }}/ndk/25.2.9519653
 
-      # 4. 上传产物
+      # 4. 收集并上传编译生成的产物
       - name: Upload Binaries
         uses: actions/upload-artifact@v4
         with:
-          name: AndUEDumper-Artifacts
+          name: AndUEDumper-Final-Binaries
           path: |
             **/out/
             **/libs/
