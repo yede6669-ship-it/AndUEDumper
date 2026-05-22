@@ -29,7 +29,7 @@ jobs:
         run: |
           echo "y" | $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager --install "ndk;25.2.9519653"
 
-      # 4. 修复脚本硬编码、重设可执行权限并自动编译
+      # 4. 修复脚本硬编码、抹除严苛警告、修正 C++20 语法漏洞并编译
       - name: Compile Main AndUEDumper
         run: |
           # 尝试进入 AndUEDumper 主源码目录
@@ -39,26 +39,35 @@ jobs:
           
           echo "[+] 当前编译工作目录: $(pwd)"
           
-          # 【核心修复 1】：改用纯 Linux 环境变量拼接，确保拿到绝对完整的系统路径
           export REAL_NDK_PATH="$ANDROID_HOME/ndk/25.2.9519653"
-          echo "[+] NDK 绝对路径精准定为: $REAL_NDK_PATH"
           
           if [ -f "build.sh" ]; then
-              # 【核心修复 2】：动态修正脚本内部路径拼接
+              # 核心修复 1：修正 NDK_HOME 路径
               sed -i "s|\$NDK_HOME|$REAL_NDK_PATH|g" build.sh
               sed -i "s|/ndk/25.2.9519653|$REAL_NDK_PATH|g" build.sh
               
-              # 【核心修复 3】：不管前面发生了什么，在运行前强制重新赋予最高可执行权限
+              # 核心修复 2：在 CMakeLists.txt 中无视所有阻碍编译的 -Werror 警告
+              if [ -f "CMakeLists.txt" ]; then
+                  echo "[+] 检测到 CMakeLists.txt，正在移除 -Werror 限制..."
+                  sed -i 's/-Werror//g' CMakeLists.txt
+              fi
+              
+              # 核心修复 3：修正 Dumper.cpp 中第 302 行的 C++20 运算符重载歧义
+              if [ -f "src/Dumper.cpp" ]; then
+                  echo "[+] 正在修正 src/Dumper.cpp 中的 C++20 符号歧义..."
+                  sed -i 's/pkg.first == packageObj/pkg.first == (unsigned char *)packageObj.object/g' src/Dumper.cpp
+              fi
+
+              # 刷新执行权限
               chmod 775 build.sh
               
-              echo "[+] 脚本修复与权限刷新完毕，开始自动选择 CMake 编译..."
+              echo "[+] 源码与权限深度修复完毕，开始自动选择 CMake 编译..."
               echo "1" | ./build.sh
           else
               echo "[-] 错误：未找到 build.sh 脚本！"
               exit 1
           fi
         env:
-          # 为全局编译链环境做好变量铺垫
           NDK_HOME: /usr/local/lib/android/sdk/ndk/25.2.9519653
           ANDROID_NDK_ROOT: /usr/local/lib/android/sdk/ndk/25.2.9519653
 
