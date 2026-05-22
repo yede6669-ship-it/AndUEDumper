@@ -18,36 +18,38 @@ jobs:
         with:
           submodules: recursive
 
-      # 2. 安装 Make 等必备构建工具
-      - name: Install build tools
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y make build-essential
-
-      # 3. 通过 SDK 管理器自动下载 NDK 
-      # GitHub Actions 的 Ubuntu 镜像自带了 sdkmanager。我们直接用它下载 r25c 版本的 NDK（版本号为 25.2.9519653）
-      # 这也是官方最提倡的、不会报任何输入项错误的纯净做法
+      # 2. 通过 SDK 管理器自动下载 NDK
       - name: Install Android NDK via SDKManager
         run: |
           echo "y" | $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager --install "ndk;25.2.9519653"
 
-      # 4. 执行自动化编译
-      # 此时 NDK 会被下载到 $ANDROID_HOME/ndk/25.2.9519653 目录下
-      # 我们直接把它赋值给该项目 Makefile 苦苦寻找的 NDK_HOME 变量
-      - name: Compile AndUEDumper
+      # 3. 赋予脚本执行权限并调用 build.sh 编译
+      # 同样把 NDK 路径映射给项目需要用的 NDK_HOME 变量
+      - name: Compile with build.sh
         run: |
-          cd AndUEDumper
-          make clean && make
+          # 寻找 build.sh 所在的目录并进入
+          SCRIPT_DIR=$(find . -name "build.sh" -exec dirname {} \;)
+          if [ -n "$SCRIPT_DIR" ]; then
+              echo "[+] 找到 build.sh 位于: $SCRIPT_DIR"
+              cd "$SCRIPT_DIR"
+          else
+              echo "[-] 错误：整个仓库中都没有找到 build.sh！"
+              exit 1
+          fi
+          
+          # 给脚本加可执行权限并运行
+          chmod +x build.sh
+          ./build.sh
         env:
           NDK_HOME: ${{ env.ANDROID_HOME }}/ndk/25.2.9519653
 
-      # 5. 上传产物
+      # 4. 上传产物
       - name: Upload Binaries
         uses: actions/upload-artifact@v4
         with:
           name: AndUEDumper-Artifacts
           path: |
-            AndUEDumper/AndUEDumper
-            AndUEDumper/out/
-            AndUEDumper/libs/
+            **/out/
+            **/libs/
+            **/build/
           if-no-files-found: warn
