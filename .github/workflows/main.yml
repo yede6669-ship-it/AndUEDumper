@@ -5,32 +5,31 @@ on:
     branches: [ "main", "master" ]
   pull_request:
     branches: [ "main", "master" ]
-  workflow_dispatch: # 允许手动触发
+  workflow_dispatch: # 允许在 GitHub 页面手动点击按钮触发编译
 
 jobs:
   build:
     runs-on: ubuntu-latest
 
     steps:
-      # 1. 递归检出代码及所有子模块（非常重要，漏了底层库会报错）
+      # 1. 递归检出主仓库代码及所有依赖子模块
       - name: Checkout repository with submodules
         uses: actions/checkout@v4
         with:
           submodules: recursive
 
-      # 2. 通过 SDK 管理器自动下载 NDK r25c
+      # 2. 通过 SDK 管理器在云端自动下载配置 Android NDK r25c
       - name: Install Android NDK via SDKManager
         run: |
           echo "y" | $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager --install "ndk;25.2.9519653"
 
-      # 3. 直接进入主程序目录进行编译（不走 find 盲搜，100% 精准）
+      # 3. 精准进入主项目目录，并利用管道符自动应对交互式菜单
       - name: Compile Main AndUEDumper
         run: |
           # 检查当前最外层目录结构
           ls -la
           
-          # 直接尝试进入 AndUEDumper 主目录
-          # （注：如果你的仓库根目录直接就是源码，没有 AndUEDumper 这一层文件夹，它会自动留在根目录）
+          # 尝试进入 AndUEDumper 主源码目录
           if [ -d "AndUEDumper" ]; then
               cd AndUEDumper
           fi
@@ -38,14 +37,19 @@ jobs:
           echo "[+] 当前编译工作目录: $(pwd)"
           
           if [ -f "build.sh" ]; then
-              echo "[+] 成功找到主构建脚本，开始编译..."
+              echo "[+] 成功找到主构建脚本，开始自动选择 CMake 编译..."
               chmod +x build.sh
-              ./build.sh
+              
+              # 【核心逻辑】：通过 echo "1" 自动应答交互式菜单中的 [1] CMake 选项
+              echo "1" | ./build.sh
+              
           elif [ -f "AndUEDumper/build.sh" ]; then
-              echo "[+] 在子目录中找到 build.sh，开始编译..."
+              echo "[+] 在子目录中找到 build.sh，开始自动选择 CMake 编译..."
               cd AndUEDumper
               chmod +x build.sh
-              ./build.sh
+              
+              # 同上，自动应答 [1] CMake
+              echo "1" | ./build.sh
           else
               echo "[-] 错误：在此路径下未找到主程序的 build.sh 脚本！"
               ls -R
@@ -54,7 +58,7 @@ jobs:
         env:
           NDK_HOME: ${{ env.ANDROID_HOME }}/ndk/25.2.9519653
 
-      # 4. 收集并上传编译生成的产物
+      # 4. 收集全盘可能生成的二进制产物并打包上传
       - name: Upload Binaries
         uses: actions/upload-artifact@v4
         with:
@@ -63,4 +67,5 @@ jobs:
             **/out/
             **/libs/
             **/build/
+            **/bin/
           if-no-files-found: warn
