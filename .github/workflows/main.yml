@@ -29,7 +29,7 @@ jobs:
         run: |
           echo "y" | $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager --install "ndk;25.2.9519653"
 
-      # 4. 修复脚本硬编码并自动执行编译
+      # 4. 修复脚本硬编码、重设可执行权限并自动编译
       - name: Compile Main AndUEDumper
         run: |
           # 尝试进入 AndUEDumper 主源码目录
@@ -39,26 +39,28 @@ jobs:
           
           echo "[+] 当前编译工作目录: $(pwd)"
           
-          # 【核心修复 1】：定义绝对路径的 NDK 变量
-          export REAL_NDK_PATH="${{ env.ANDROID_HOME }}/ndk/25.2.9519653"
-          echo "[+] NDK 绝对路径定为: $REAL_NDK_PATH"
+          # 【核心修复 1】：改用纯 Linux 环境变量拼接，确保拿到绝对完整的系统路径
+          export REAL_NDK_PATH="$ANDROID_HOME/ndk/25.2.9519653"
+          echo "[+] NDK 绝对路径精准定为: $REAL_NDK_PATH"
           
-          # 【核心修复 2】：动态修正作者 build.sh 内部可能存在的路径拼接漏洞
-          # 强行把脚本里可能写成 /ndk/ 的地方，替换为正确的绝对路径环境变量
           if [ -f "build.sh" ]; then
-              sed -i 's|\$NDK_HOME|'"$REAL_NDK_PATH"'|g' build.sh
-              sed -i 's|/ndk/25.2.9519653|'"$REAL_NDK_PATH"'|g' build.sh
+              # 【核心修复 2】：动态修正脚本内部路径拼接
+              sed -i "s|\$NDK_HOME|$REAL_NDK_PATH|g" build.sh
+              sed -i "s|/ndk/25.2.9519653|$REAL_NDK_PATH|g" build.sh
               
-              echo "[+] 脚本修复完毕，开始自动选择 CMake 编译..."
+              # 【核心修复 3】：不管前面发生了什么，在运行前强制重新赋予最高可执行权限
+              chmod 775 build.sh
+              
+              echo "[+] 脚本修复与权限刷新完毕，开始自动选择 CMake 编译..."
               echo "1" | ./build.sh
           else
               echo "[-] 错误：未找到 build.sh 脚本！"
               exit 1
           fi
         env:
-          # 保持双保险，同时暴露这两个最常用的 NDK 变量名
-          NDK_HOME: ${{ env.ANDROID_HOME }}/ndk/25.2.9519653
-          ANDROID_NDK_ROOT: ${{ env.ANDROID_HOME }}/ndk/25.2.9519653
+          # 为全局编译链环境做好变量铺垫
+          NDK_HOME: /usr/local/lib/android/sdk/ndk/25.2.9519653
+          ANDROID_NDK_ROOT: /usr/local/lib/android/sdk/ndk/25.2.9519653
 
       # 5. 打包并上传编译生成的产物
       - name: Upload Binaries
