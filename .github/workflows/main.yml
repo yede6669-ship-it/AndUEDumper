@@ -5,30 +5,33 @@ on:
     branches: [ "main", "master" ]
   pull_request:
     branches: [ "main", "master" ]
-  workflow_dispatch: # 允许在 GitHub 页面手动点击按钮触发编译
+  workflow_dispatch:
 
 jobs:
   build:
     runs-on: ubuntu-latest
 
     steps:
-      # 1. 递归检出主仓库代码及所有依赖子模块
+      # 1. 递归检出代码及所有子模块
       - name: Checkout repository with submodules
         uses: actions/checkout@v4
         with:
           submodules: recursive
 
-      # 2. 通过 SDK 管理器在云端自动下载配置 Android NDK r25c
+      # 2. 安装必要构建工具（补全 Ninja 和 Make）
+      - name: Install Build Tools (Ninja & Make)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ninja-build make build-essential
+
+      # 3. 通过 SDK 管理器自动下载 NDK r25c
       - name: Install Android NDK via SDKManager
         run: |
           echo "y" | $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager --install "ndk;25.2.9519653"
 
-      # 3. 精准进入主项目目录，并利用管道符自动应对交互式菜单
+      # 4. 修复脚本硬编码并自动执行编译
       - name: Compile Main AndUEDumper
         run: |
-          # 检查当前最外层目录结构
-          ls -la
-          
           # 尝试进入 AndUEDumper 主源码目录
           if [ -d "AndUEDumper" ]; then
               cd AndUEDumper
@@ -36,29 +39,28 @@ jobs:
           
           echo "[+] 当前编译工作目录: $(pwd)"
           
+          # 【核心修复 1】：定义绝对路径的 NDK 变量
+          export REAL_NDK_PATH="${{ env.ANDROID_HOME }}/ndk/25.2.9519653"
+          echo "[+] NDK 绝对路径定为: $REAL_NDK_PATH"
+          
+          # 【核心修复 2】：动态修正作者 build.sh 内部可能存在的路径拼接漏洞
+          # 强行把脚本里可能写成 /ndk/ 的地方，替换为正确的绝对路径环境变量
           if [ -f "build.sh" ]; then
-              echo "[+] 成功找到主构建脚本，开始自动选择 CMake 编译..."
-              chmod +x build.sh
+              sed -i 's|\$NDK_HOME|'"$REAL_NDK_PATH"'|g' build.sh
+              sed -i 's|/ndk/25.2.9519653|'"$REAL_NDK_PATH"'|g' build.sh
               
-              # 【核心逻辑】：通过 echo "1" 自动应答交互式菜单中的 [1] CMake 选项
-              echo "1" | ./build.sh
-              
-          elif [ -f "AndUEDumper/build.sh" ]; then
-              echo "[+] 在子目录中找到 build.sh，开始自动选择 CMake 编译..."
-              cd AndUEDumper
-              chmod +x build.sh
-              
-              # 同上，自动应答 [1] CMake
+              echo "[+] 脚本修复完毕，开始自动选择 CMake 编译..."
               echo "1" | ./build.sh
           else
-              echo "[-] 错误：在此路径下未找到主程序的 build.sh 脚本！"
-              ls -R
+              echo "[-] 错误：未找到 build.sh 脚本！"
               exit 1
           fi
         env:
+          # 保持双保险，同时暴露这两个最常用的 NDK 变量名
           NDK_HOME: ${{ env.ANDROID_HOME }}/ndk/25.2.9519653
+          ANDROID_NDK_ROOT: ${{ env.ANDROID_HOME }}/ndk/25.2.9519653
 
-      # 4. 收集全盘可能生成的二进制产物并打包上传
+      # 5. 打包并上传编译生成的产物
       - name: Upload Binaries
         uses: actions/upload-artifact@v4
         with:
