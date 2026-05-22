@@ -5,43 +5,43 @@ on:
     branches: [ "main", "master" ]
   pull_request:
     branches: [ "main", "master" ]
-  workflow_dispatch: # 允许手动在 GitHub 页面点击按钮触发构建
+  workflow_dispatch: # 允许手动触发
 
 jobs:
   build:
     runs-on: ubuntu-latest
 
     steps:
-      # 1. 检出主仓库代码，并递归下载所有子模块（对应 git clone --recursive）
+      # 1. 递归检出代码及子模块
       - name: Checkout repository with submodules
         uses: actions/checkout@v4
         with:
           submodules: recursive
 
-      # 2. 安装编译所需的 Make 和基础工具
+      # 2. 安装 Make 等必备构建工具
       - name: Install build tools
         run: |
           sudo apt-get update
           sudo apt-get install -y make build-essential
 
-      # 3. 设置并配置 Android NDK (推荐使用与项目相近的 r25c 版本，确保稳定)
-      - name: Setup Android NDK
-        id: setup-ndk
-        uses: android-actions/setup-android@v3
-        with:
-          ndk-version: '25.2.9519653' # 如果想用特定的旧版本（如 r21e），可以换成 '21.4.7075529'
+      # 3. 通过 SDK 管理器自动下载 NDK 
+      # GitHub Actions 的 Ubuntu 镜像自带了 sdkmanager。我们直接用它下载 r25c 版本的 NDK（版本号为 25.2.9519653）
+      # 这也是官方最提倡的、不会报任何输入项错误的纯净做法
+      - name: Install Android NDK via SDKManager
+        run: |
+          echo "y" | $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager --install "ndk;25.2.9519653"
 
       # 4. 执行自动化编译
-      # 根据指南进入子目录，通过 env 将 GitHub 虚拟环境的 $ANDROID_NDK_ROOT 赋值给该项目所需的 NDK_HOME
+      # 此时 NDK 会被下载到 $ANDROID_HOME/ndk/25.2.9519653 目录下
+      # 我们直接把它赋值给该项目 Makefile 苦苦寻找的 NDK_HOME 变量
       - name: Compile AndUEDumper
         run: |
           cd AndUEDumper
           make clean && make
         env:
-          NDK_HOME: ${{ steps.setup-ndk.outputs.ndk-path }}
+          NDK_HOME: ${{ env.ANDROID_HOME }}/ndk/25.2.9519653
 
-      # 5. 收集并上传编译生成的产物
-      # 该项目编译完成后，通常会在 AndUEDumper 目录或其 out/libs 下生成二进制文件
+      # 5. 上传产物
       - name: Upload Binaries
         uses: actions/upload-artifact@v4
         with:
@@ -50,4 +50,4 @@ jobs:
             AndUEDumper/AndUEDumper
             AndUEDumper/out/
             AndUEDumper/libs/
-          if-no-files-found: warn # 避免因输出目录名字不固定导致构建报红
+          if-no-files-found: warn
