@@ -1,50 +1,53 @@
-name: Build_AndUEDumper_Absolute_Fix
+name: Build AndUEDumper
 
 on:
-  workflow_dispatch:
+  push:
+    branches: [ "main", "master" ]
+  pull_request:
+    branches: [ "main", "master" ]
+  workflow_dispatch: # 允许手动在 GitHub 页面点击按钮触发构建
 
 jobs:
   build:
     runs-on: ubuntu-latest
+
     steps:
-      - name: Checkout Code
+      # 1. 检出主仓库代码，并递归下载所有子模块（对应 git clone --recursive）
+      - name: Checkout repository with submodules
         uses: actions/checkout@v4
+        with:
+          submodules: recursive
 
-      - name: Auto-Fix and Build
+      # 2. 安装编译所需的 Make 和基础工具
+      - name: Install build tools
         run: |
-          # 1. 自动定位 Android.mk 的最深处位置
-          MK_PATH=$(find . -name "Android.mk" -print -quit)
-          BUILD_DIR=$(dirname "$MK_PATH")
-          echo "检测到核心目录: $BUILD_DIR"
-          cd "$BUILD_DIR"
+          sudo apt-get update
+          sudo apt-get install -y make build-essential
 
-          # 2. 强力修复 KittyMemory 路径
-          # 不管它在哪，我们直接从仓库根目录找这个库并强行拷贝到当前编译目录
-          KITTY_SRC=$(find /home/runner/work -name "KittyMemoryMgr.hpp" -print -quit)
-          if [ -n "$KITTY_SRC" ]; then
-            KITTY_DIR=$(dirname "$KITTY_SRC")
-            mkdir -p ./KittyMemory
-            cp -r "$KITTY_DIR"/* ./KittyMemory/
-            echo "已强行补齐 KittyMemory 依赖"
-          else
-            echo "错误：仓库中完全没找到 KittyMemory 源码，请确认你已经手动上传了它！"
-          fi
+      # 3. 设置并配置 Android NDK (推荐使用与项目相近的 r25c 版本，确保稳定)
+      - name: Setup Android NDK
+        id: setup-ndk
+        uses: android-actions/setup-android@v3
+        with:
+          ndk-version: '25.2.9519653' # 如果想用特定的旧版本（如 r21e），可以换成 '21.4.7075529'
 
-          # 3. 执行编译
-          # 关键参数：
-          # LOCAL_CPPFLAGS="-fexceptions" -> 允许代码使用 throw/try (修复 argsparse 报错)
-          # -I$(pwd)/KittyMemory -> 强制包含头文件路径
-          $ANDROID_NDK_LATEST_HOME/ndk-build \
-            APP_ABI=arm64-v8a \
-            APP_PLATFORM=android-26 \
-            NDK_PROJECT_PATH=. \
-            APP_BUILD_SCRIPT=Android.mk \
-            LOCAL_CPPFLAGS="-fexceptions -I$(pwd)/KittyMemory -I$(pwd)/src" \
-            LOCAL_CFLAGS="-I$(pwd)/KittyMemory -I$(pwd)/src" \
-            -j$(nproc)
+      # 4. 执行自动化编译
+      # 根据指南进入子目录，通过 env 将 GitHub 虚拟环境的 $ANDROID_NDK_ROOT 赋值给该项目所需的 NDK_HOME
+      - name: Compile AndUEDumper
+        run: |
+          cd AndUEDumper
+          make clean && make
+        env:
+          NDK_HOME: ${{ steps.setup-ndk.outputs.ndk-path }}
 
-      - name: Upload Output
+      # 5. 收集并上传编译生成的产物
+      # 该项目编译完成后，通常会在 AndUEDumper 目录或其 out/libs 下生成二进制文件
+      - name: Upload Binaries
         uses: actions/upload-artifact@v4
         with:
-          name: AndUEDumper_Working_Binary
-          path: "**/libs/arm64-v8a/*"
+          name: AndUEDumper-Artifacts
+          path: |
+            AndUEDumper/AndUEDumper
+            AndUEDumper/out/
+            AndUEDumper/libs/
+          if-no-files-found: warn # 避免因输出目录名字不固定导致构建报红
